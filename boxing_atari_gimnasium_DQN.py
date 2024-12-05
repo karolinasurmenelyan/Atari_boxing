@@ -34,23 +34,26 @@ from tensorflow.keras.layers import Dense, Conv2D, Flatten
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import MeanSquaredError
 
-import gym
+# import gym
+import gymnasium as gym
 from tqdm import tqdm
 
 import imageio
-from IPython.display import HTML
+# from IPython.display import HTML
 from base64 import b64encode
+import ale_py
 
 
 class DQN_agent(nn.Module):
-    def __init__(self, s_size, a_size):
+    def __init__(self, s_size, a_size, model_dir="models"):
         super(DQN_agent, self).__init__()
         # Training parameters
-        self.n_training_episodes = 65   # Total training episodes
+        self.n_training_episodes = 100  # Total training episodes
         self.n_evaluation_episodes = 50
         self.learning_rate = 0.001          # Learning rate
         self.state_size = s_size
         self.action_size = a_size
+        self.model_dir = model_dir
 
         # Environment parameters
         self.max_steps = 10                # Max steps per episode
@@ -62,6 +65,10 @@ class DQN_agent(nn.Module):
         self.decay_rate = 0.0001             # Exponential decay rate for exploration prob
         self.memory = deque(maxlen=2000)
         self.batch_size = 32
+
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir)
+
         self.model = self._build_model()
         self.target_model = self._build_model()
 
@@ -78,6 +85,20 @@ class DQN_agent(nn.Module):
 
     def forward(self, x):
         return self.model(x)
+
+    def save_model(self, episode):
+        model_path = os.path.join(self.model_dir, f"dqn_model_ep{episode}.keras")
+        self.model.save(model_path)
+        print(f"Model saved at {model_path}")
+
+    def load_model(self, model_name="dqn_model_ep65.keras"):
+        model_path = os.path.join(self.model_dir, model_name)
+        if os.path.exists(model_path):
+            self.model.load_weights(model_path)
+            self.target_model.set_weights(self.model.get_weights())
+            print(f"Model loaded from {model_path}")
+        else:
+            print(f"Model {model_path} not found. Training from scratch.")
 
     def update_target_network(self):
         self.target_model.set_weights(self.model.get_weights())
@@ -114,6 +135,7 @@ class DQN_agent(nn.Module):
             action = np.random.randint(0, self.action_size)
         return action
 
+
 def preprocess_state(state):
     state = state[35:195]
     state = state[::2, ::2, :]
@@ -123,10 +145,11 @@ def preprocess_state(state):
     state = state.reshape(80, 80, 1)
     return state
 
+
 def train(env, DQN_agent):
     for episode in tqdm(range(DQN_agent.n_training_episodes)):
         if episode % 3 == 0:
-          DQN_agent.update_target_network()
+            DQN_agent.update_target_network()
         epsilon = DQN_agent.min_epsilon + (DQN_agent.max_epsilon - DQN_agent.min_epsilon) * np.exp(-DQN_agent.decay_rate * episode)
         state, info = env.reset()
         state = preprocess_state(state)
@@ -150,6 +173,13 @@ def train(env, DQN_agent):
                 break
 
             DQN_agent.replay()
+
+        # Сохраняем модель каждые 10 эпизодов
+        if episode % 10 == 0:
+            DQN_agent.save_model(episode)
+
+    # Финальное сохранение модели
+    DQN_agent.save_model(DQN_agent.n_training_episodes)
 
 
 
@@ -235,15 +265,15 @@ def record_video(env, DQN_agent, out_directory, fps=30):
 
 
 
-
-def show_video(video_path, video_width = 500):
-
-  video_file = open(video_path, "r+b").read()
-
-  video_url = f"data:video/mp4;base64,{b64encode(video_file).decode()}"
-  return HTML(f"""<video width={video_width} controls><source src="{video_url}"></video>""")
-
-show_video("Agent.mp4")
+#
+# def show_video(video_path, video_width = 500):
+#
+#   video_file = open(video_path, "r+b").read()
+#
+#   video_url = f"data:video/mp4;base64,{b64encode(video_file).decode()}"
+#   return HTML(f"""<video width={video_width} controls><source src="{video_url}"></video>""")
+#
+# show_video("Agent.mp4")
 
 
 def print_info(env):
@@ -263,28 +293,32 @@ def print_info(env):
 
     action_space = env.action_space.n
     print("There are ", action_space, " possible actions")
+    return state_space, action_space
+
 
 def main():
-    virtual_display = Display(visible=0, size=(1400, 900))
-    virtual_display.start()
+    # virtual_display = Display(visible=0, size=(1400, 900))
+    # virtual_display.start()
 
     gym.register_envs(ale_py)
 
-    env = gym.make("ALE/Boxing-v5",
-                   render_mode="rgb_array")  # , observation_space=Box(0, 255, (210, 160, 3), np.uint8))
-    print_info(env=env)
+    env = gym.make("ALE/Boxing-v5", render_mode="rgb_array")
+    state_space, action_space = print_info(env=env)
 
-    DQN_agent = DQN_agent(state_space, action_space)
+    DQN_agent_ = DQN_agent(state_space, action_space)
 
-    train(env, DQN_agent)
+    model_name = "dqn_model_ep65.keras"
+    if os.path.exists(os.path.join(DQN_agent_.model_dir, model_name)):
+        DQN_agent_.load_model(model_name)
+    else:
+        train(env, DQN_agent_)
 
     mean_reward, std_reward = evaluate_agent(env=env,
-                                             max_steps=DQN_agent.max_steps,
-                                             n_eval_episodes=DQN_agent.n_evaluation_episodes,
-                                             DQN_agent=DQN_agent)
+                                             max_steps=DQN_agent_.max_steps,
+                                             n_eval_episodes=DQN_agent_.n_evaluation_episodes,
+                                             DQN_agent=DQN_agent_)
     print(f"Mean reward: {mean_reward}, Std reward: {std_reward}")
-    record_video(env, DQN_agent, "Agent.mp4")
-
+    record_video(env, DQN_agent_, "Agent_DQN.mp4")
 
 if __name__ == "__main__":
     main()
