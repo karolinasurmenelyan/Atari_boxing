@@ -91,7 +91,7 @@ class DQN_agent(nn.Module):
         self.model.save(model_path)
         print(f"Model saved at {model_path}")
 
-    def load_model(self, model_name="dqn_model_ep65.keras"):
+    def load_model(self, model_name="dqn_model_ep100.keras"):
         model_path = os.path.join(self.model_dir, model_name)
         if os.path.exists(model_path):
             self.model.load_weights(model_path)
@@ -174,11 +174,9 @@ def train(env, DQN_agent):
 
             DQN_agent.replay()
 
-        # Сохраняем модель каждые 10 эпизодов
         if episode % 10 == 0:
             DQN_agent.save_model(episode)
 
-    # Финальное сохранение модели
     DQN_agent.save_model(DQN_agent.n_training_episodes)
 
 
@@ -234,7 +232,6 @@ def record_video(env, DQN_agent, out_directory, fps=30):
     state, _ = env.reset()
     state = preprocess_state(state)
 
-    # Создаем буфер для хранения 4 последних состояний
     state_buffer = deque(maxlen=4)
     for _ in range(4):
         state_buffer.append(state)
@@ -247,7 +244,6 @@ def record_video(env, DQN_agent, out_directory, fps=30):
     truncated = False
 
     while not (terminated or truncated):
-        # Подготовка входного состояния из 4 кадров
         state_input = np.concatenate(list(state_buffer), axis=-1).reshape(1, 80, 80, 4)
         action = DQN_agent.epsilon_greedy_policy(state_input, epsilon=0)  # Получаем действие от агента
         new_state, reward, terminated, truncated, _ = env.step(action)
@@ -256,24 +252,11 @@ def record_video(env, DQN_agent, out_directory, fps=30):
         img = env.render()
         images.append(img)
 
-        # Обновляем буфер состояний
         new_state = preprocess_state(new_state)
         state_buffer.append(new_state)
 
     imageio.mimsave(out_directory, [np.array(image) for image in images], fps=fps)
     print(f"Total reward: {rewards_sum}")
-
-
-
-#
-# def show_video(video_path, video_width = 500):
-#
-#   video_file = open(video_path, "r+b").read()
-#
-#   video_url = f"data:video/mp4;base64,{b64encode(video_file).decode()}"
-#   return HTML(f"""<video width={video_width} controls><source src="{video_url}"></video>""")
-#
-# show_video("Agent.mp4")
 
 
 def print_info(env):
@@ -297,9 +280,6 @@ def print_info(env):
 
 
 def main():
-    # virtual_display = Display(visible=0, size=(1400, 900))
-    # virtual_display.start()
-
     gym.register_envs(ale_py)
 
     env = gym.make("ALE/Boxing-v5", render_mode="rgb_array")
@@ -307,7 +287,7 @@ def main():
 
     DQN_agent_ = DQN_agent(state_space, action_space)
 
-    model_name = "dqn_model_ep65.keras"
+    model_name = "dqn_model_epq100.keras"
     if os.path.exists(os.path.join(DQN_agent_.model_dir, model_name)):
         DQN_agent_.load_model(model_name)
     else:
